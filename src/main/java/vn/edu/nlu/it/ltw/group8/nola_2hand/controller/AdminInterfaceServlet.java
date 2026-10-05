@@ -1,0 +1,160 @@
+package vn.edu.nlu.it.ltw.group8.nola_2hand.controller;
+
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.MultipartConfig;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
+import vn.edu.nlu.it.ltw.group8.nola_2hand.dao.HomeDAO;
+import vn.edu.nlu.it.ltw.group8.nola_2hand.dao.InterfaceDAO;
+import vn.edu.nlu.it.ltw.group8.nola_2hand.dao.ShopDAO;
+import vn.edu.nlu.it.ltw.group8.nola_2hand.model.ShopInfo;
+
+import java.io.IOException;
+import java.sql.Timestamp;
+import java.util.Map;
+
+@WebServlet(name = "AdminInterfaceServlet", urlPatterns = {"/admin/interface-manager"})
+@MultipartConfig(
+        fileSizeThreshold = 1024 * 1024 * 2,
+        maxFileSize = 1024 * 1024 * 10,
+        maxRequestSize = 1024 * 1024 * 50
+)
+public class AdminInterfaceServlet extends HttpServlet {
+
+    private Cloudinary getCloudinary() {
+        return new Cloudinary(ObjectUtils.asMap(
+                "cloud_name", "dnrpxyuwo",
+                "api_key", "261138144329333",
+                "api_secret", "beBh1tv2UJYTuS8CWkVmKS48CO4"
+        ));
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        ShopDAO shopDao = new ShopDAO();
+        HomeDAO homeDao = new HomeDAO();
+
+        request.setAttribute("shopInfo", shopDao.getShopInfo());
+        request.setAttribute("listSlideshow", homeDao.getSlideshowBanners());
+        request.setAttribute("listSmallBanners", homeDao.getSmallBanners());
+        request.setAttribute("listBrands", homeDao.getFeaturedBrands());
+
+        request.getRequestDispatcher("/admin/interface-manager.jsp").forward(request, response);
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        request.setCharacterEncoding("UTF-8");
+        String action = request.getParameter("action");
+        InterfaceDAO dao = new InterfaceDAO();
+        Cloudinary cloudinary = getCloudinary();
+
+        try {
+            if ("updateInfo".equals(action)) {
+                ShopInfo info = new ShopInfo();
+                info.setBrandName(request.getParameter("brandName"));
+                info.setSubtitle(request.getParameter("subtitle"));
+                info.setHistory1(request.getParameter("history1"));
+                info.setHistory2(request.getParameter("history2"));
+                info.setHistory3(request.getParameter("history3"));
+                info.setFooterDesc(request.getParameter("footerDesc"));
+                info.setAddress(request.getParameter("address"));
+                info.setHotline(request.getParameter("hotline"));
+                info.setEmail(request.getParameter("email"));
+                info.setCopyright(request.getParameter("copyright"));
+
+                Part filePart = request.getPart("mainImage");
+                String oldImg = request.getParameter("oldMainImage");
+                if (filePart != null && filePart.getSize() > 0) {
+                    Map uploadResult = cloudinary.uploader().upload(filePart.getInputStream().readAllBytes(), ObjectUtils.asMap("folder", "vvp_interface"));
+                    info.setMainImageUrl((String) uploadResult.get("secure_url"));
+                } else {
+                    info.setMainImageUrl(oldImg);
+                }
+
+                dao.updateShopInfo(info);
+                request.getSession().setAttribute("shopInfo", info);
+            }
+
+            else if ("addBanner".equals(action)) {
+                Part filePart = request.getPart("bannerImage");
+                String linkUrl = request.getParameter("linkUrl");
+                int sortOrder = Integer.parseInt(request.getParameter("sortOrder"));
+
+                String startDateStr = request.getParameter("startDate");
+                String endDateStr = request.getParameter("endDate");
+
+                Timestamp startDate = null;
+                Timestamp endDate = null;
+
+                if (startDateStr != null && !startDateStr.isEmpty()) {
+                    startDate = Timestamp.valueOf(startDateStr.replace("T", " ") + ":00");
+                }
+                if (endDateStr != null && !endDateStr.isEmpty()) {
+                    endDate = Timestamp.valueOf(endDateStr.replace("T", " ") + ":00");
+                }
+
+                if (filePart != null && filePart.getSize() > 0) {
+                    Map uploadResult = cloudinary.uploader().upload(filePart.getInputStream().readAllBytes(), ObjectUtils.asMap("folder", "vvp_banners"));
+
+                    dao.addBanner((String) uploadResult.get("secure_url"), linkUrl, sortOrder, startDate, endDate);
+                }
+            }
+
+            else if ("deleteBanner".equals(action)) {
+                dao.deleteBanner(Integer.parseInt(request.getParameter("id")));
+            }
+
+            else if ("updateOrder".equals(action)) {
+                String[] ids = request.getParameterValues("ids[]");
+                if (ids != null) {
+                    for (int i = 0; i < ids.length; i++) {
+                        int id = Integer.parseInt(ids[i]);
+                        int sortOrder = i + 1;
+                        dao.updateBannerOrder(id, sortOrder);
+                    }
+                }
+                // Phản hồi cho Javascript bằng Text thuần túy, KHÔNG load lại trang
+                response.setContentType("text/plain");
+                response.getWriter().write("success");
+                return;
+            }
+
+            else if ("addSmallBanner".equals(action)) {
+                Part filePart = request.getPart("smallImage");
+                int sortOrder = Integer.parseInt(request.getParameter("sortOrder"));
+                if (filePart != null && filePart.getSize() > 0) {
+                    Map uploadResult = cloudinary.uploader().upload(filePart.getInputStream().readAllBytes(), ObjectUtils.asMap("folder", "vvp_banners"));
+                    dao.addSmallBanner((String) uploadResult.get("secure_url"), sortOrder);
+                }
+            }
+            else if ("deleteSmallBanner".equals(action)) {
+                dao.deleteSmallBanner(Integer.parseInt(request.getParameter("id")));
+            }
+
+            else if ("addBrand".equals(action)) {
+                String name = request.getParameter("brandName");
+                int sortOrder = Integer.parseInt(request.getParameter("sortOrder"));
+                Part filePart = request.getPart("brandLogo");
+                if (filePart != null && filePart.getSize() > 0) {
+                    Map uploadResult = cloudinary.uploader().upload(filePart.getInputStream().readAllBytes(), ObjectUtils.asMap("folder", "vvp_brands"));
+                    dao.addBrand(name, (String) uploadResult.get("secure_url"), sortOrder);
+                }
+            }
+            else if ("deleteBrand".equals(action)) {
+                dao.deleteBrand(Integer.parseInt(request.getParameter("id")));
+            }
+
+            response.sendRedirect("interface-manager?msg=success");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            response.sendRedirect("interface-manager?msg=error");
+        }
+    }
+}

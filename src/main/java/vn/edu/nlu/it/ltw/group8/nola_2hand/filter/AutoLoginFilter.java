@@ -1,0 +1,94 @@
+package vn.edu.nlu.it.ltw.group8.nola_2hand.filter;
+
+import java.io.IOException;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.FilterConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.annotation.WebFilter;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import vn.edu.nlu.it.ltw.group8.nola_2hand.dao.FavoriteDAO;
+import vn.edu.nlu.it.ltw.group8.nola_2hand.dao.UserDAO;
+import vn.edu.nlu.it.ltw.group8.nola_2hand.model.User;
+
+@WebFilter("/*")
+public class AutoLoginFilter implements Filter {
+
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+        HttpServletRequest req = (HttpServletRequest) request;
+        HttpServletResponse res = (HttpServletResponse) response;
+        HttpSession session = req.getSession();
+
+        String requestURI = req.getRequestURI();
+        String contextPath = req.getContextPath();
+
+        String pathInsideApp = requestURI.substring(contextPath.length());
+
+        User user = (User) session.getAttribute("acc");
+
+        if (user == null) {
+            Cookie[] cookies = req.getCookies();
+            String token = null;
+            if (cookies != null) {
+                for (Cookie cookie : cookies) {
+                    if (cookie.getName().equals("remember_token")) {
+                        token = cookie.getValue();
+                        break;
+                    }
+                }
+            }
+            if (token != null) {
+                UserDAO dao = new UserDAO();
+                user = dao.getUserByToken(token);
+                if (user != null) {
+                    session.setAttribute("acc", user);
+                }
+            }
+        }
+
+        if (user != null) {
+            if (session.getAttribute("favoriteProductIds") == null || session.getAttribute("favCount") == null) {
+                FavoriteDAO favDao = new FavoriteDAO();
+                java.util.List<Integer> favIds = favDao.getFavoriteProductIds(user.getId());
+
+                session.setAttribute("favoriteProductIds", favIds);
+                session.setAttribute("favCount", favIds.size());
+            }
+
+            if (session.getAttribute("cartCount") == null) {
+                vn.edu.nlu.it.ltw.group8.nola_2hand.dao.CartDAO cartDao = new vn.edu.nlu.it.ltw.group8.nola_2hand.dao.CartDAO();
+                java.util.List<vn.edu.nlu.it.ltw.group8.nola_2hand.model.CartItem> cart = cartDao.getCartByUserId(user.getId());
+                int totalCartCount = 0;
+                if (cart != null) {
+                    for (vn.edu.nlu.it.ltw.group8.nola_2hand.model.CartItem item : cart) {
+                        totalCartCount += item.getQuantity();
+                    }
+                }
+                session.setAttribute("cart", cart);
+                session.setAttribute("cartCount", totalCartCount);
+            }
+        }
+
+        boolean isLoggedIn = (session.getAttribute("acc") != null);
+
+        boolean isLoginRequest = pathInsideApp.equals("/login") || pathInsideApp.equals("/login.jsp");
+        boolean isRegisterRequest = pathInsideApp.equals("/register") || pathInsideApp.equals("/register.jsp");
+        boolean isForgotRequest = pathInsideApp.equals("/forgotPassword") || pathInsideApp.equals("/userpass.jsp");
+
+        if (isLoggedIn && (isLoginRequest || isRegisterRequest || isForgotRequest)) {
+            res.sendRedirect(contextPath + "/home");
+            return;
+        }
+
+        chain.doFilter(request, response);
+    }
+
+    public void init(FilterConfig filterConfig) throws ServletException {}
+    public void destroy() {}
+}
